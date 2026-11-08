@@ -21,6 +21,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
 import com.fazalelahi92.apptracker.data.UsageInterval
 import com.fazalelahi92.apptracker.data.UsageRepository
 import kotlinx.coroutines.launch
@@ -40,7 +42,8 @@ class MainActivity : ComponentActivity() {
                 onOpenSettings = { startActivity(repository.permissionSettingsIntent()) },
                 onRefresh = { day, callback ->
                     lifecycleScope.launch { callback(repository.loadDay(day)) }
-                }
+                },
+                onCheckPermission = { repository.hasUsagePermission() }
             )
         }
     }
@@ -51,13 +54,16 @@ class MainActivity : ComponentActivity() {
 private fun AppTrackerScreen(
     hasPermission: Boolean,
     onOpenSettings: () -> Unit,
-    onRefresh: (Long, (List<UsageInterval>) -> Unit) -> Unit
+    onRefresh: (Long, (List<UsageInterval>) -> Unit) -> Unit,
+    onCheckPermission: () -> Boolean
 ) {
     var selectedDay by remember { mutableLongStateOf(UsageRepository.startOfDay(System.currentTimeMillis())) }
     var intervals by remember { mutableStateOf(emptyList<UsageInterval>()) }
     var tab by remember { mutableIntStateOf(0) }
     var permission by remember { mutableStateOf(hasPermission) }
     val dateFormat = remember { SimpleDateFormat("EEE, dd MMM yyyy", Locale.getDefault()) }
+
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { permission = onCheckPermission() }
 
     LaunchedEffect(selectedDay, permission) {
         if (permission) onRefresh(selectedDay) { intervals = it }
@@ -84,7 +90,7 @@ private fun AppTrackerScreen(
         ) { padding ->
             if (tab == 1) {
                 SettingsScreen(permission, onOpenSettings) {
-                    permission = repositoryPermissionCheckFallback(permission)
+                    permission = onCheckPermission()
                 }
             } else {
                 Column(Modifier.fillMaxSize().padding(padding).padding(horizontal = 16.dp)) {
@@ -149,9 +155,7 @@ private fun AppTrackerScreen(
         }
     }
 }
-
-private fun repositoryPermissionCheckFallback(current: Boolean) = current
-
+\n
 @Composable
 private fun SettingsScreen(permission: Boolean, onOpenSettings: () -> Unit, onRefresh: () -> Unit) {
     Column(Modifier.fillMaxSize().padding(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
