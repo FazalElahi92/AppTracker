@@ -67,6 +67,8 @@ class UsageRepository(private val context: Context) {
             when (event.eventType) {
                 UsageEvents.Event.SCREEN_INTERACTIVE -> transition(t, "Home screen")
                 UsageEvents.Event.SCREEN_NON_INTERACTIVE -> transition(t, "Screen off")
+                UsageEvents.Event.KEYGUARD_SHOWN -> transition(t, "Locked")
+                UsageEvents.Event.KEYGUARD_HIDDEN -> transition(t, "Home screen")
                 UsageEvents.Event.ACTIVITY_RESUMED -> {
                     val p = event.packageName ?: ""
                     if (p == launcher) transition(t, "Home screen", p)
