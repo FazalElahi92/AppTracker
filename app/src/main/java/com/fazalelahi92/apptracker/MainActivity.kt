@@ -207,7 +207,8 @@ private fun AppTrackerScreen(
         }
     }
 }
-\n
+
+
 @Composable
 private fun SettingsScreen(permission: Boolean, padding: PaddingValues, onOpenSettings: () -> Unit, onRefresh: () -> Unit) {
     Column(Modifier.fillMaxSize().padding(padding).padding(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
