@@ -136,17 +136,41 @@ private fun AppTrackerScreen(
                     } else {
                         val totals = intervals.groupBy { if (it.state == "App") it.appLabel else it.state }
                             .mapValues { e -> e.value.sumOf { (it.endTime-it.startTime).coerceAtLeast(0L) } }
+                        val totalDuration = totals.values.sum().coerceAtLeast(1L)
+                        val longEntries = totals.entries
+                            .filter { it.value >= 10L * 60_000L && it.value.toDouble() / totalDuration >= 0.05 }
+                            .sortedByDescending { it.value }
+                        val chartTotals = buildMap {
+                            longEntries.forEach { put(it.key, it.value) }
+                            val shortDuration = totals.filterKeys { key -> longEntries.none { it.key == key } }
+                                .values.sum()
+                            if (shortDuration > 0L) put("Others", shortDuration)
+                        }
                         Card(Modifier.fillMaxWidth()) {
                             Column(Modifier.padding(16.dp)) {
                                 Text("24-hour overview", style = MaterialTheme.typography.titleMedium)
                                 Spacer(Modifier.height(8.dp))
                                 Row(verticalAlignment = Alignment.CenterVertically) {
-                                    UsageDonut(totals, Modifier.size(132.dp))
-                                    Spacer(Modifier.width(18.dp))
-                                    Column {
-                                        Text("Full-day timeline", style = MaterialTheme.typography.titleSmall)
-                                        Text("${totals.size} activity categories", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                        Text("Includes screen-off time", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    UsageDonut(chartTotals, Modifier.size(132.dp))
+                                    Spacer(Modifier.width(16.dp))
+                                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                        Text("Daily activity", style = MaterialTheme.typography.titleSmall)
+                                        chartTotals.entries.sortedByDescending { it.value }.forEach { entry ->
+                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                Box(Modifier.size(9.dp).background(colorFor(entry.key), CircleShape))
+                                                Spacer(Modifier.width(7.dp))
+                                                Column(Modifier.weight(1f)) {
+                                                    Text(entry.key, style = MaterialTheme.typography.bodySmall,
+                                                        maxLines = 1)
+                                                    Text("${duration(entry.value)} · ${(entry.value * 100L / totalDuration)}%",
+                                                        style = MaterialTheme.typography.labelSmall,
+                                                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                                }
+                                            }
+                                        }
+                                        Text("Short activities are grouped as Others",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant)
                                     }
                                 }
                             }
