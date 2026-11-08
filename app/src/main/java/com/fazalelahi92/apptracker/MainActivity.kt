@@ -25,6 +25,11 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
+import androidx.work.ExistingPeriodicWorkPolicy
+import androidx.work.PeriodicWorkRequestBuilder
+import androidx.work.WorkManager
+import com.fazalelahi92.apptracker.data.UsageSyncWorker
+import java.util.concurrent.TimeUnit
 import com.fazalelahi92.apptracker.data.UsageInterval
 import com.fazalelahi92.apptracker.data.UsageRepository
 import kotlinx.coroutines.launch
@@ -39,6 +44,10 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         repository = UsageRepository(applicationContext)
+        val sync = PeriodicWorkRequestBuilder<UsageSyncWorker>(15, TimeUnit.MINUTES).build()
+        WorkManager.getInstance(applicationContext).enqueueUniquePeriodicWork(
+            "apptracker-usage-sync", ExistingPeriodicWorkPolicy.KEEP, sync
+        )
         setContent {
             AppTrackerScreen(
                 hasPermission = repository.hasUsagePermission(),
