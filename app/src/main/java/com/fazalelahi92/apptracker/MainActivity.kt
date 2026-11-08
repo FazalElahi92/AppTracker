@@ -2,6 +2,7 @@ package com.fazalelahi92.apptracker
 
 import android.os.Bundle
 import android.app.DatePickerDialog
+import android.app.TimePickerDialog
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.Canvas
@@ -73,6 +74,8 @@ private fun AppTrackerScreen(
     var intervals by remember { mutableStateOf(emptyList<UsageInterval>()) }
     var tab by remember { mutableIntStateOf(0) }
     var permission by remember { mutableStateOf(hasPermission) }
+    var lookupHour by remember { mutableIntStateOf(12) }
+    var lookupMinute by remember { mutableIntStateOf(0) }
     val dateFormat = remember { SimpleDateFormat("EEE, dd MMM yyyy", Locale.getDefault()) }
     val context = LocalContext.current
 
@@ -146,6 +149,35 @@ private fun AppTrackerScreen(
                                         Text("Includes screen-off time", color = MaterialTheme.colorScheme.onSurfaceVariant)
                                     }
                                 }
+                            }
+                        }
+                        val lookupInstant = Calendar.getInstance().apply {
+                            timeInMillis = selectedDay
+                            set(Calendar.HOUR_OF_DAY, lookupHour)
+                            set(Calendar.MINUTE, lookupMinute)
+                            set(Calendar.SECOND, 0)
+                            set(Calendar.MILLISECOND, 0)
+                        }.timeInMillis
+                        val match = intervals.firstOrNull { lookupInstant >= it.startTime && lookupInstant < it.endTime }
+                        Card(Modifier.fillMaxWidth()) {
+                            Column(Modifier.padding(14.dp)) {
+                                Text("Check a specific time", style = MaterialTheme.typography.titleMedium)
+                                TextButton(onClick = {
+                                    TimePickerDialog(context, { _, hour, minute ->
+                                        lookupHour = hour
+                                        lookupMinute = minute
+                                    }, lookupHour, lookupMinute, false).show()
+                                }) {
+                                    Text("Choose time: ${SimpleDateFormat("h:mm a", Locale.getDefault()).format(Date(lookupInstant))}")
+                                }
+                                Text(
+                                    when {
+                                        match == null -> "No recorded activity at this time"
+                                        match.state == "App" -> "Foreground app: ${match.appLabel}"
+                                        else -> "Phone state: ${match.state}"
+                                    },
+                                    style = MaterialTheme.typography.bodyLarge
+                                )
                             }
                         }
                         Spacer(Modifier.height(12.dp))
