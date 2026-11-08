@@ -49,12 +49,25 @@ class UsageRepository(private val context: Context) {
             ).toString()
         } catch (_: Exception) { packageName }
 
-        fun transition(at: Long, newState: String, newPkg: String = "") {
-            if (at > cursor && cursor >= dayStart && cursor < dayEnd) {
-                result.add(UsageInterval(dayStart = dayStart, startTime = cursor,
-                    endTime = at.coerceAtMost(dayEnd), packageName = pkg, appLabel = label, state = state))
+        fun appendInterval(start: Long, end: Long) {
+            if (end <= start) return
+            val previous = result.lastOrNull()
+            if (previous != null && previous.endTime == start &&
+                previous.state == state && previous.packageName == pkg) {
+                result[result.lastIndex] = previous.copy(endTime = end)
+            } else {
+                result.add(UsageInterval(dayStart = dayStart, startTime = start,
+                    endTime = end, packageName = pkg, appLabel = label, state = state))
             }
-            if (at >= dayStart) cursor = at.coerceAtMost(dayEnd)
+        }
+
+        fun transition(at: Long, newState: String, newPkg: String = "") {
+            val bounded = at.coerceIn(dayStart, dayEnd)
+            if (newState == state && newPkg == pkg) return
+            if (at > cursor && cursor >= dayStart && cursor < dayEnd) {
+                appendInterval(cursor, bounded)
+            }
+            if (at >= dayStart) cursor = bounded
             state = newState
             pkg = newPkg
             label = newState
@@ -65,27 +78,22 @@ class UsageRepository(private val context: Context) {
             val t = event.timeStamp
             if (t > dayEnd) break
             when (event.eventType) {
-                UsageEvents.Event.SCREEN_INTERACTIVE -> transition(t, "Home screen")
                 UsageEvents.Event.SCREEN_NON_INTERACTIVE -> transition(t, "Screen off")
                 UsageEvents.Event.KEYGUARD_SHOWN -> transition(t, "Locked")
-                UsageEvents.Event.KEYGUARD_HIDDEN -> transition(t, "Home screen")
                 UsageEvents.Event.ACTIVITY_RESUMED -> {
                     val p = event.packageName ?: ""
-                    if (p == launcher) transition(t, "Home screen", p)
+                    if (p == launcher) transition(t, "Home screen")
                     else {
                         transition(t, "App", p)
                         label = appLabel(p)
                     }
                 }
-                UsageEvents.Event.ACTIVITY_PAUSED -> {
-                    if (state == "App" && event.packageName == pkg)
-                        transition(t, "Home screen", launcher ?: "")
-                }
+                // A paused activity is not proof that the user returned to Home.
+                // The launcher is recorded only when its own ACTIVITY_RESUMED event arrives.
             }
         }
         if (cursor < dayEnd) {
-            result.add(UsageInterval(dayStart = dayStart, startTime = cursor.coerceAtLeast(dayStart),
-                endTime = dayEnd, packageName = pkg, appLabel = label, state = state))
+            appendInterval(cursor.coerceAtLeast(dayStart), dayEnd)
         }
         db.usageDao().deleteDay(dayStart)
         if (result.isNotEmpty()) db.usageDao().insertAll(result)
