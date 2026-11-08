@@ -1,6 +1,7 @@
 package com.fazalelahi92.apptracker
 
 import android.os.Bundle
+import android.app.DatePickerDialog
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.Canvas
@@ -20,6 +21,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
@@ -28,6 +30,7 @@ import com.fazalelahi92.apptracker.data.UsageRepository
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
+import java.util.Calendar
 import java.util.Locale
 
 class MainActivity : ComponentActivity() {
@@ -62,6 +65,7 @@ private fun AppTrackerScreen(
     var tab by remember { mutableIntStateOf(0) }
     var permission by remember { mutableStateOf(hasPermission) }
     val dateFormat = remember { SimpleDateFormat("EEE, dd MMM yyyy", Locale.getDefault()) }
+    val context = LocalContext.current
 
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { permission = onCheckPermission() }
 
@@ -89,7 +93,7 @@ private fun AppTrackerScreen(
             }
         ) { padding ->
             if (tab == 1) {
-                SettingsScreen(permission, onOpenSettings) {
+                SettingsScreen(permission, padding, onOpenSettings) {
                     permission = onCheckPermission()
                 }
             } else {
@@ -98,7 +102,14 @@ private fun AppTrackerScreen(
                     Row(verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
                         OutlinedButton(onClick = { selectedDay -= 86_400_000L }) { Text("‹ Previous") }
-                        Text(dateFormat.format(Date(selectedDay)), style = MaterialTheme.typography.titleMedium)
+                        TextButton(onClick = {
+                            val c = Calendar.getInstance().apply { timeInMillis = selectedDay }
+                            DatePickerDialog(context, { _, year, month, day ->
+                                selectedDay = Calendar.getInstance().apply {
+                                    set(year, month, day, 0, 0, 0); set(Calendar.MILLISECOND, 0)
+                                }.timeInMillis
+                            }, c.get(Calendar.YEAR), c.get(Calendar.MONTH), c.get(Calendar.DAY_OF_MONTH)).show()
+                        }) { Text(dateFormat.format(Date(selectedDay)), style = MaterialTheme.typography.titleMedium) }
                         OutlinedButton(onClick = { selectedDay = UsageRepository.startOfDay(System.currentTimeMillis()) }) { Text("Today") }
                     }
                     Spacer(Modifier.height(12.dp))
@@ -157,8 +168,8 @@ private fun AppTrackerScreen(
 }
 \n
 @Composable
-private fun SettingsScreen(permission: Boolean, onOpenSettings: () -> Unit, onRefresh: () -> Unit) {
-    Column(Modifier.fillMaxSize().padding(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+private fun SettingsScreen(permission: Boolean, padding: PaddingValues, onOpenSettings: () -> Unit, onRefresh: () -> Unit) {
+    Column(Modifier.fillMaxSize().padding(padding).padding(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
         Text("Settings", style = MaterialTheme.typography.headlineMedium)
         Card(Modifier.fillMaxWidth()) {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -182,7 +193,7 @@ private fun SettingsScreen(permission: Boolean, onOpenSettings: () -> Unit, onRe
 
 @Composable
 private fun UsageDonut(totals: Map<String, Long>, modifier: Modifier = Modifier) {
-    val entries = totals.entries.sortedByDescending { it.value }.take(7)
+    val entries = totals.entries.sortedByDescending { it.value }
     val sum = entries.sumOf { it.value }.coerceAtLeast(1L)
     Canvas(modifier) {
         var start = -90f
