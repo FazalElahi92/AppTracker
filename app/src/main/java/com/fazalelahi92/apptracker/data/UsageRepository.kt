@@ -29,7 +29,7 @@ class UsageRepository(private val context: Context) {
     suspend fun loadDay(dayStart: Long): List<UsageInterval> {
         val cached = db.usageDao().forDay(dayStart)
         if (!hasUsagePermission()) return cached
-        val dayEnd = dayStart + 24L * 60L * 60L * 1000L
+        val dayEnd = minOf(dayStart + 24L * 60L * 60L * 1000L, System.currentTimeMillis())
         val manager = context.getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
         val events = manager.queryEvents(dayStart - 12L * 60L * 60L * 1000L, dayEnd)
         val event = UsageEvents.Event()
@@ -37,10 +37,10 @@ class UsageRepository(private val context: Context) {
             Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME), 0
         )?.activityInfo?.packageName
 
-        var state = "Screen off"
+        var state = "Unknown"
         var pkg = ""
         var label = state
-        var cursor = dayStart - 12L * 60L * 60L * 1000L
+        var cursor = dayStart
         val result = mutableListOf<UsageInterval>()
 
         fun appLabel(packageName: String): String = try {
