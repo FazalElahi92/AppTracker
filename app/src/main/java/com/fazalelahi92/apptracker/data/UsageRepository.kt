@@ -43,11 +43,17 @@ class UsageRepository(private val context: Context) {
         var cursor = dayStart
         val result = mutableListOf<UsageInterval>()
 
-        fun appLabel(packageName: String): String = try {
-            context.packageManager.getApplicationLabel(
-                context.packageManager.getApplicationInfo(packageName, 0)
-            ).toString()
-        } catch (_: Exception) { packageName }
+        fun appLabel(packageName: String): String {
+            val installedLabel = try {
+                context.packageManager.getApplicationLabel(
+                    context.packageManager.getApplicationInfo(packageName, 0)
+                ).toString().trim()
+            } catch (_: Exception) { "" }
+            if (installedLabel.isNotBlank() && installedLabel != packageName &&
+                !installedLabel.contains('/')) return installedLabel
+            val shortName = packageName.substringAfterLast('.').replace('_', ' ').replace('-', ' ')
+            return shortName.replaceFirstChar { if (it.isLowerCase()) it.titlecase() else it.toString() }
+        }
 
         fun appendInterval(start: Long, end: Long) {
             if (end <= start) return
