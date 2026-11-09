@@ -134,7 +134,39 @@ private fun AppTrackerScreen(
                             }
                         }
                     } else {
-                        val totals = intervals.groupBy { if (it.state == "App") it.appLabel else it.state }
+                        val displayIntervals = remember(intervals) {
+                            val ordered = intervals.sortedBy { it.startTime }
+                            val result = mutableListOf<UsageInterval>()
+                            var pendingShortHomeStart: Long? = null
+                            for (item in ordered) {
+                                val isHome = item.state == "Home screen" ||
+                                    (item.state == "App" && (
+                                        item.appLabel.contains("launcher", ignoreCase = true) ||
+                                        item.packageName.contains("launcher", ignoreCase = true)
+                                    ))
+                                val isShortHome = isHome && item.endTime - item.startTime < 5L * 60_000L
+                                if (isShortHome) {
+                                    if (result.isNotEmpty()) {
+                                        val previous = result.removeAt(result.lastIndex)
+                                        result.add(previous.copy(endTime = item.endTime))
+                                    } else {
+                                        pendingShortHomeStart = pendingShortHomeStart ?: item.startTime
+                                    }
+                                } else {
+                                    val adjusted = if (pendingShortHomeStart != null) {
+                                        item.copy(startTime = minOf(item.startTime, pendingShortHomeStart!!))
+                                    } else item
+                                    result.add(adjusted)
+                                    pendingShortHomeStart = null
+                                }
+                            }
+                            if (pendingShortHomeStart != null && result.isNotEmpty()) {
+                                val last = result.removeAt(result.lastIndex)
+                                result.add(last.copy(endTime = maxOf(last.endTime, ordered.last().endTime)))
+                            }
+                            result
+                        }
+                        val totals = displayIntervals.groupBy { if (it.state == "App") friendlyAppName(it.appLabel, it.packageName) else it.state }
                             .mapValues { e -> e.value.sumOf { (it.endTime-it.startTime).coerceAtLeast(0L) } }
                         val totalDuration = totals.values.sum().coerceAtLeast(1L)
                         val longEntries = totals.entries
@@ -197,7 +229,7 @@ private fun AppTrackerScreen(
                                 Text(
                                     when {
                                         match == null -> "No recorded activity at this time"
-                                        match.state == "App" -> "Foreground app: ${match.appLabel}"
+                                        match.state == "App" -> "Foreground app: ${friendlyAppName(match.appLabel, match.packageName)}"
                                         else -> "Phone state: ${match.state}"
                                     },
                                     style = MaterialTheme.typography.bodyLarge
@@ -208,13 +240,13 @@ private fun AppTrackerScreen(
                         Text("Activity timeline", style = MaterialTheme.typography.titleLarge)
                         LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp),
                             contentPadding = PaddingValues(bottom = 24.dp)) {
-                            items(intervals) { item ->
+                            items(displayIntervals) { item ->
                                 Card(Modifier.fillMaxWidth()) {
                                     Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
                                         Box(Modifier.size(10.dp).background(colorFor(item.appLabel), CircleShape))
                                         Spacer(Modifier.width(10.dp))
                                         Column(Modifier.weight(1f)) {
-                                            Text(if (item.state == "App") item.appLabel else item.state,
+                                            Text(if (item.state == "App") friendlyAppName(item.appLabel, item.packageName) else item.state,
                                                 style = MaterialTheme.typography.titleSmall)
                                             Text("${clock(item.startTime)} – ${clock(item.endTime)}",
                                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -278,6 +310,13 @@ private fun colorFor(value: String): Color {
     val palette = listOf(Color(0xFF4267B2), Color(0xFFDB8B36), Color(0xFF3C9478),
         Color(0xFF9B6BB5), Color(0xFFCF6470), Color(0xFF6B91A8), Color(0xFF8B9560))
     return palette[(value.hashCode().ushr(1)) % palette.size]
+}
+private fun friendlyAppName(label: String, packageName: String): String {
+    val candidate = label.trim()
+    if (candidate.isNotBlank() && !candidate.contains('.') && candidate != packageName) return candidate
+    val shortName = packageName.substringAfterLast('.').ifBlank { candidate }
+        .replace('_', ' ').replace('-', ' ')
+    return shortName.replaceFirstChar { if (it.isLowerCase()) it.titlecase() else it.toString() }
 }
 private fun clock(time: Long) = SimpleDateFormat("h:mm a", Locale.getDefault()).format(Date(time))
 private fun duration(ms: Long): String {
