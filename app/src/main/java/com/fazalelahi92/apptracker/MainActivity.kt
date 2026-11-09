@@ -91,9 +91,27 @@ private fun AppTrackerScreen(
     )) {
         Scaffold(
             topBar = {
-                TopAppBar(title = { Text("AppTracker") }, actions = {
-                    IconButton(onClick = { tab = 1 }) { Icon(Icons.Default.Settings, "Settings") }
-                })
+                TopAppBar(
+                    title = {
+                        if (tab == 0) {
+                            TextButton(onClick = {
+                                val c = Calendar.getInstance().apply { timeInMillis = selectedDay }
+                                DatePickerDialog(context, { _, year, month, day ->
+                                    selectedDay = Calendar.getInstance().apply {
+                                        set(year, month, day, 0, 0, 0); set(Calendar.MILLISECOND, 0)
+                                    }.timeInMillis
+                                }, c.get(Calendar.YEAR), c.get(Calendar.MONTH), c.get(Calendar.DAY_OF_MONTH)).show()
+                            }) {
+                                Text(dateFormat.format(Date(selectedDay)), style = MaterialTheme.typography.titleMedium)
+                            }
+                        } else Text("Settings")
+                    },
+                    actions = {
+                        if (tab == 0) IconButton(onClick = { tab = 1 }) {
+                            Icon(Icons.Default.Settings, "Settings")
+                        }
+                    }
+                )
             },
             bottomBar = {
                 NavigationBar {
@@ -110,21 +128,12 @@ private fun AppTrackerScreen(
                 }
             } else {
                 Column(Modifier.fillMaxSize().padding(padding).padding(horizontal = 16.dp)) {
-                    Spacer(Modifier.height(12.dp))
-                    Row(verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
-                        OutlinedButton(onClick = { selectedDay -= 86_400_000L }) { Text("‹ Previous") }
-                        TextButton(onClick = {
-                            val c = Calendar.getInstance().apply { timeInMillis = selectedDay }
-                            DatePickerDialog(context, { _, year, month, day ->
-                                selectedDay = Calendar.getInstance().apply {
-                                    set(year, month, day, 0, 0, 0); set(Calendar.MILLISECOND, 0)
-                                }.timeInMillis
-                            }, c.get(Calendar.YEAR), c.get(Calendar.MONTH), c.get(Calendar.DAY_OF_MONTH)).show()
-                        }) { Text(dateFormat.format(Date(selectedDay)), style = MaterialTheme.typography.titleMedium) }
-                        OutlinedButton(onClick = { selectedDay = UsageRepository.startOfDay(System.currentTimeMillis()) }) { Text("Today") }
+                    Spacer(Modifier.height(8.dp))
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        TextButton(onClick = { selectedDay -= 86_400_000L }) { Text("‹ Previous day") }
+                        TextButton(onClick = { selectedDay = UsageRepository.startOfDay(System.currentTimeMillis()) }) { Text("Today") }
                     }
-                    Spacer(Modifier.height(12.dp))
+                    Spacer(Modifier.height(8.dp))
                     if (!permission) {
                         Card {
                             Column(Modifier.padding(18.dp)) {
@@ -169,15 +178,18 @@ private fun AppTrackerScreen(
                         val totals = displayIntervals.groupBy { if (it.state == "App") friendlyAppName(it.appLabel, it.packageName) else it.state }
                             .mapValues { e -> e.value.sumOf { (it.endTime-it.startTime).coerceAtLeast(0L) } }
                         val totalDuration = totals.values.sum().coerceAtLeast(1L)
-                        val longEntries = totals.entries
-                            .filter { it.value >= 10L * 60_000L && it.value.toDouble() / totalDuration >= 0.05 }
+                        val separateEntries = totals.entries
+                            .filter { it.value.toDouble() / totalDuration > 0.05 && it.key != "Others" }
                             .sortedByDescending { it.value }
-                        val chartTotals = buildMap {
-                            longEntries.forEach { put(it.key, it.value) }
-                            val shortDuration = totals.filterKeys { key -> longEntries.none { it.key == key } }
-                                .values.sum()
-                            if (shortDuration > 0L) put("Others", shortDuration)
+                        val otherEntries = totals.entries
+                            .filter { entry -> separateEntries.none { it.key == entry.key } }
+                            .sortedByDescending { it.value }
+                        val othersDuration = otherEntries.sumOf { it.value }
+                        val chartTotals = linkedMapOf<String, Long>().apply {
+                            separateEntries.forEach { put(it.key, it.value) }
+                            if (othersDuration > 0L) put("Others", othersDuration)
                         }
+                        var othersExpanded by remember(selectedDay) { mutableStateOf(false) }
                         Card(Modifier.fillMaxWidth()) {
                             Column(Modifier.padding(16.dp)) {
                                 Text("24-hour overview", style = MaterialTheme.typography.titleMedium)
@@ -187,22 +199,36 @@ private fun AppTrackerScreen(
                                     Spacer(Modifier.width(16.dp))
                                     Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                                         Text("Daily activity", style = MaterialTheme.typography.titleSmall)
-                                        chartTotals.entries.sortedByDescending { it.value }.forEach { entry ->
-                                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                                Box(Modifier.size(9.dp).background(colorFor(entry.key), CircleShape))
-                                                Spacer(Modifier.width(7.dp))
-                                                Column(Modifier.weight(1f)) {
-                                                    Text(entry.key, style = MaterialTheme.typography.bodySmall,
-                                                        maxLines = 1)
-                                                    Text("${duration(entry.value)} · ${(entry.value * 100L / totalDuration)}%",
-                                                        style = MaterialTheme.typography.labelSmall,
-                                                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                        chartTotals.forEach { (name, value) ->
+                                            if (name == "Others") {
+                                                TextButton(
+                                                    onClick = { othersExpanded = !othersExpanded },
+                                                    contentPadding = PaddingValues(0.dp)
+                                                ) {
+                                                    Text("${if (othersExpanded) "▾" else "▸"} Others · ${duration(value)} · ${(value * 100L / totalDuration)}%")
+                                                }
+                                                if (othersExpanded) {
+                                                    otherEntries.forEach { item ->
+                                                        Text(
+                                                            "   ${item.key} · ${duration(item.value)} · ${(item.value * 100L / totalDuration)}%",
+                                                            style = MaterialTheme.typography.labelSmall,
+                                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                        )
+                                                    }
+                                                }
+                                            } else {
+                                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                                    Box(Modifier.size(9.dp).background(colorFor(name), CircleShape))
+                                                    Spacer(Modifier.width(7.dp))
+                                                    Column(Modifier.weight(1f)) {
+                                                        Text(name, style = MaterialTheme.typography.bodySmall, maxLines = 1)
+                                                        Text("${duration(value)} · ${(value * 100L / totalDuration)}%",
+                                                            style = MaterialTheme.typography.labelSmall,
+                                                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                                    }
                                                 }
                                             }
                                         }
-                                        Text("Short activities are grouped as Others",
-                                            style = MaterialTheme.typography.labelSmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant)
                                     }
                                 }
                             }
@@ -238,21 +264,54 @@ private fun AppTrackerScreen(
                         }
                         Spacer(Modifier.height(12.dp))
                         Text("Activity timeline", style = MaterialTheme.typography.titleLarge)
-                        LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp),
-                            contentPadding = PaddingValues(bottom = 24.dp)) {
-                            items(displayIntervals) { item ->
-                                Card(Modifier.fillMaxWidth()) {
-                                    Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                                        Box(Modifier.size(10.dp).background(colorFor(item.appLabel), CircleShape))
-                                        Spacer(Modifier.width(10.dp))
-                                        Column(Modifier.weight(1f)) {
-                                            Text(if (item.state == "App") friendlyAppName(item.appLabel, item.packageName) else item.state,
-                                                style = MaterialTheme.typography.titleSmall)
-                                            Text("${clock(item.startTime)} – ${clock(item.endTime)}",
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                                style = MaterialTheme.typography.bodySmall)
+                        val timelineState = androidx.compose.foundation.lazy.rememberLazyListState()
+                        val scope = rememberCoroutineScope()
+                        Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            LazyColumn(
+                                state = timelineState,
+                                modifier = Modifier.weight(1f),
+                                verticalArrangement = Arrangement.spacedBy(8.dp),
+                                contentPadding = PaddingValues(bottom = 24.dp)
+                            ) {
+                                items(displayIntervals) { item ->
+                                    Card(Modifier.fillMaxWidth()) {
+                                        Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                                            Box(Modifier.size(10.dp).background(colorFor(item.appLabel), CircleShape))
+                                            Spacer(Modifier.width(10.dp))
+                                            Column(Modifier.weight(1f)) {
+                                                Text(if (item.state == "App") friendlyAppName(item.appLabel, item.packageName) else item.state,
+                                                    style = MaterialTheme.typography.titleSmall)
+                                                Text("${clock(item.startTime)} – ${clock(item.endTime)}",
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                    style = MaterialTheme.typography.bodySmall)
+                                            }
+                                            Text(duration(item.endTime - item.startTime), style = MaterialTheme.typography.labelMedium)
                                         }
-                                        Text(duration(item.endTime - item.startTime), style = MaterialTheme.typography.labelMedium)
+                                    }
+                                }
+                            }
+                            // A fixed 24-hour navigator; selecting an hour jumps to its first recorded interval.
+                            LazyColumn(
+                                modifier = Modifier.width(42.dp).fillMaxHeight(),
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                contentPadding = PaddingValues(bottom = 24.dp)
+                            ) {
+                                items((0..23).toList()) { hour ->
+                                    TextButton(
+                                        onClick = {
+                                            val dayStart = selectedDay
+                                            val target = dayStart + hour * 3_600_000L
+                                            val index = displayIntervals.indexOfFirst {
+                                                target >= it.startTime && target < it.endTime
+                                            }.let { found ->
+                                                if (found >= 0) found else displayIntervals.indexOfFirst { it.startTime >= target }
+                                            }
+                                            if (index >= 0) scope.launch { timelineState.animateScrollToItem(index) }
+                                        },
+                                        contentPadding = PaddingValues(horizontal = 2.dp, vertical = 0.dp),
+                                        modifier = Modifier.height(34.dp)
+                                    ) {
+                                        Text(hour.toString().padStart(2, '0'), style = MaterialTheme.typography.labelSmall)
                                     }
                                 }
                             }
